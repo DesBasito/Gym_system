@@ -1,3 +1,6 @@
 [submodule "services/workload-service"]
 	path = services/workload-service
 	url = https://github.com/DesBasito/workload-service
+[submodule "services/Gym-CRM-system"]
+	path = services/Gym-CRM-system
+	url = https://github.com/DesBasito/Gym-CRM-system
