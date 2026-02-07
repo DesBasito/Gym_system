@@ -1,0 +1,3 @@
+[submodule "services/workload-service"]
+	path = services/workload-service
+	url = https://github.com/DesBasito/workload-service
