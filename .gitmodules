@@ -4,3 +4,6 @@
 [submodule "services/Gym-CRM-system"]
 	path = services/Gym-CRM-system
 	url = https://github.com/DesBasito/Gym-CRM-system
+[submodule "services/discovery-service"]
+	path = services/discovery-service
+	url = https://github.com/DesBasito/Gym-discovery-service
