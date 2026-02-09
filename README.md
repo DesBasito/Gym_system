@@ -71,23 +71,38 @@ The Gym CRM System is a microservices-based application designed to manage gym o
 
 ## 🔧 Services
 
-### 1. Eureka Server
+### 1. Discovery Service (Eureka Server)
+- **Application Name**: `Gym-discovery-service`
 - **Port**: 8761
 - **Purpose**: Service registry and discovery
 - **URL**: `http://localhost:8761`
+- **Configuration**:
+  - Does not register itself with Eureka (`register-with-eureka: false`)
+  - Does not fetch registry (`fetch-registry: false`)
+  - Acts as standalone service discovery server
 
 ### 2. Gym-CRM-System
-- **Port**: 8080
+- **Application Name**: `gym-crm-system`
+- **Port**: 8081 (dev), 8080 (prod)
 - **Purpose**: Main CRM application
 - **Database**: PostgreSQL
 - **Key Features**:
   - User management (Trainers, Trainees)
   - Training session management
   - Authentication & Authorization (JWT)
-  - Metrics and monitoring
-  - Integration with workload-service
+  - Metrics and monitoring with Prometheus
+  - Integration with workload-service via OpenFeign
+- **Circuit Breaker**:
+  - Sliding window size: 10 calls
+  - Failure rate threshold: 50%
+  - Wait duration in open state: 5s
+- **Eureka Configuration**:
+  - Registers with Eureka: `true`
+  - Fetches registry: `true`
+  - Lease renewal interval: 30s
 
 ### 3. Workload-Service
+- **Application Name**: `workload-service`
 - **Port**: 8082
 - **Purpose**: Trainer workload tracking
 - **Storage**: In-memory (ConcurrentHashMap)
@@ -96,6 +111,14 @@ The Gym CRM System is a microservices-based application designed to manage gym o
   - Monthly summary aggregation
   - Thread-safe operations
   - Stateless JWT authentication
+- **Logging**:
+  - Root level: INFO
+  - Application level: DEBUG
+  - Log file: `logs/workload-service.log`
+- **Eureka Configuration**:
+  - Registers with Eureka: `true`
+  - Fetches registry: `true`
+  - Lease renewal interval: 30s
 
 ---
 
@@ -172,9 +195,9 @@ spring:
 
 ### 4. Start Services (in order)
 
-#### Step 1: Start Eureka Server
+#### Step 1: Start Discovery Service (Eureka Server)
 ```bash
-cd services/eureka-server
+cd services/discovery-service
 mvn spring-boot:run
 ```
 Wait for Eureka to start at `http://localhost:8761`
@@ -189,15 +212,23 @@ Service will register with Eureka at port 8082
 #### Step 3: Start Gym-CRM-System
 ```bash
 cd services/Gym-CRM-system
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
-Service will register with Eureka at port 8080
+Service will register with Eureka at port 8081 (dev profile)
+
+> **Note**: For production, use `-Dspring-boot.run.profiles=prod` (port 8080)
 
 ### 5. Verify Services
 
 - **Eureka Dashboard**: http://localhost:8761
-- **Gym-CRM Swagger**: http://localhost:8080/swagger-ui.html
+  - Check that both `gym-crm-system` and `workload-service` are registered
+- **Gym-CRM Swagger**: http://localhost:8081/swagger-ui.html (dev)
+  - API documentation and testing interface
 - **Workload Swagger**: http://localhost:8082/swagger-ui.html
+  - Workload service API documentation
+- **Actuator Endpoints**:
+  - Gym-CRM: http://localhost:8081/actuator/health
+  - Workload: http://localhost:8082/actuator/health
 
 ---
 
@@ -286,12 +317,26 @@ mvn verify -P integration-tests
 ```
 Gym_system/
 ├── services/
+│   ├── discovery-service/       # Eureka Server (Service Discovery)
+│   │   ├── src/
+│   │   │   ├── main/
+│   │   │   │   ├── java/
+│   │   │   │   │   └── epam/gym/
+│   │   │   │   │       └── GymDiscoveryServiceApplication.java
+│   │   │   │   └── resources/
+│   │   │   │       └── application.yaml
+│   │   │   └── test/
+│   │   └── pom.xml
+│   │
 │   ├── Gym-CRM-system/          # Main CRM application
 │   │   ├── src/
 │   │   │   ├── main/
 │   │   │   │   ├── java/
 │   │   │   │   │   └── epam/gym/
 │   │   │   │   │       ├── config/
+│   │   │   │   │       │   ├── SecurityConfig.java
+│   │   │   │   │       │   ├── OpenApiConfig.java
+│   │   │   │   │       │   └── AsyncConfiguration.java
 │   │   │   │   │       ├── constants/
 │   │   │   │   │       ├── domain/
 │   │   │   │   │       │   ├── dto/
@@ -299,36 +344,60 @@ Gym_system/
 │   │   │   │   │       │   └── services/
 │   │   │   │   │       └── infrastructure/
 │   │   │   │   │           ├── client/         # Feign clients
+│   │   │   │   │           │   ├── WorkloadServiceClient.java
+│   │   │   │   │           │   ├── WorkloadServiceClientFallbackFactory.java
+│   │   │   │   │           │   ├── config/
+│   │   │   │   │           │   └── dto/
 │   │   │   │   │           ├── controllers/
 │   │   │   │   │           ├── entities/
 │   │   │   │   │           ├── repositories/
-│   │   │   │   │           └── security/
+│   │   │   │   │           ├── security/
+│   │   │   │   │           └── monitoring/
 │   │   │   │   └── resources/
+│   │   │   │       ├── application.yml
+│   │   │   │       ├── application-dev.yml
+│   │   │   │       ├── application-test.yml
+│   │   │   │       └── application-prod.yml
 │   │   │   └── test/
 │   │   └── pom.xml
 │   │
-│   ├── workload-service/        # Workload tracking microservice
-│   │   ├── src/
-│   │   │   ├── main/
-│   │   │   │   ├── java/
-│   │   │   │   │   └── abu/epam/com/workloadservice/
-│   │   │   │   │       ├── config/
-│   │   │   │   │       ├── domain/
-│   │   │   │   │       │   ├── dto/
-│   │   │   │   │       │   ├── model/
-│   │   │   │   │       │   └── service/
-│   │   │   │   │       └── infrastructure/
-│   │   │   │   │           ├── controller/
-│   │   │   │   │           ├── filter/
-│   │   │   │   │           └── security/
-│   │   │   │   └── resources/
-│   │   │   └── test/
-│   │   └── pom.xml
-│   │
-│   └── eureka-server/           # Service discovery
+│   └── workload-service/        # Workload tracking microservice
 │       ├── src/
+│       │   ├── main/
+│       │   │   ├── java/
+│       │   │   │   └── abu/epam/com/workloadservice/
+│       │   │   │       ├── config/
+│       │   │   │       │   ├── SecurityConfig.java
+│       │   │   │       │   └── OpenApiConfig.java
+│       │   │   │       ├── domain/
+│       │   │   │       │   ├── dto/
+│       │   │   │       │   │   └── WorkloadRequest.java
+│       │   │   │       │   ├── model/
+│       │   │   │       │   │   ├── TrainerWorkload.java
+│       │   │   │       │   │   ├── TrainerYearlySummary.java
+│       │   │   │       │   │   └── TrainerMonthlySummary.java
+│       │   │   │       │   └── service/
+│       │   │   │       │       └── WorkloadService.java
+│       │   │   │       └── infrastructure/
+│       │   │   │           ├── controller/
+│       │   │   │           │   ├── WorkloadController.java
+│       │   │   │           │   └── GlobalExceptionHandler.java
+│       │   │   │           ├── filter/
+│       │   │   │           │   └── TransactionLoggingFilter.java
+│       │   │   │           └── security/
+│       │   │   │               ├── JwtAuthenticationFilter.java
+│       │   │   │               └── JwtUtil.java
+│       │   │   └── resources/
+│       │   │       ├── application.yml
+│       │   │       └── logback-spring.xml
+│       │   └── test/
+│       │       └── java/
+│       │           └── abu/epam/com/workloadservice/
+│       │               └── domain/service/
+│       │                   └── WorkloadServiceTest.java
 │       └── pom.xml
 │
+├── .gitmodules                  # Git submodules configuration
 ├── Task_Microservices.pdf      # Requirements documentation
 └── README.md                    # This file
 ```
@@ -340,30 +409,68 @@ Gym_system/
 ### Environment Variables
 
 ```bash
-# Database
+# Database (Gym-CRM-System)
 export DB_HOST=localhost
 export DB_PORT=5432
 export DB_NAME=gym_crm
 export DB_USER=gym_user
 export DB_PASSWORD=gym_password
 
-# JWT
-export JWT_SECRET=your-secret-key-here
-export JWT_EXPIRATION=86400000
+# JWT (Shared across services)
+export JWT_SECRET=404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+export JWT_EXPIRATION=86400000  # 24 hours in milliseconds
 
 # Eureka
 export EUREKA_URL=http://localhost:8761/eureka/
 ```
 
+### Service Ports
+
+| Service | Dev Port | Prod Port |
+|---------|----------|-----------|
+| Discovery Service | 8761 | 8761 |
+| Gym-CRM-System | 8081 | 8080 |
+| Workload-Service | 8082 | 8082 |
+
 ### Application Profiles
 
-- **default**: Development profile
+- **dev**: Development profile (port 8081, detailed logging)
 - **test**: Testing profile (H2 in-memory database)
-- **prod**: Production profile
+- **prod**: Production profile (port 8080, optimized settings)
 
 ```bash
+# Development
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
+
+# Production
 mvn spring-boot:run -Dspring-boot.run.profiles=prod
 ```
+
+### OpenFeign Configuration (Gym-CRM-System)
+
+```yaml
+spring:
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          default:
+            connect-timeout: 5000    # 5 seconds
+            read-timeout: 5000       # 5 seconds
+            logger-level: basic
+```
+
+### Circuit Breaker Configuration
+
+Both services use Resilience4j with default configuration:
+- **Sliding window size**: 10 calls
+- **Minimum calls**: 5 (before calculating failure rate)
+- **Failure rate threshold**: 50%
+- **Wait duration in open state**: 5 seconds
+- **Half-open state calls**: 3 (permitted calls)
+- **Automatic transition**: Enabled (from OPEN to HALF_OPEN)
 
 ---
 
@@ -373,11 +480,20 @@ mvn spring-boot:run -Dspring-boot.run.profiles=prod
 
 All API endpoints (except `/api/auth/*`) require JWT authentication.
 
+#### JWT Configuration
+
+Both services use the same JWT secret for token validation:
+```yaml
+jwt:
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+  expiration: 86400000  # 24 hours
+```
+
 #### Get JWT Token
 
 ```bash
-# Login
-curl -X POST http://localhost:8080/api/auth/login \
+# Login via Gym-CRM-System
+curl -X POST http://localhost:8081/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "john.doe",
@@ -396,9 +512,16 @@ Response:
 #### Use Token
 
 ```bash
-curl -X GET http://localhost:8080/api/trainees/john.doe \
+# Access Gym-CRM-System endpoints
+curl -X GET http://localhost:8081/api/trainees/john.doe \
+  -H "Authorization: Bearer eyJhbGciOiJIUzUxMiJ9..."
+
+# Access Workload-Service endpoints
+curl -X GET http://localhost:8082/api/workload/jane.smith \
   -H "Authorization: Bearer eyJhbGciOiJIUzUxMiJ9..."
 ```
+
+> **Note**: The same JWT token works for both services as they share the same secret key
 
 ### Authorization
 
@@ -463,7 +586,7 @@ When workload-service is unavailable:
 ### Register a Trainee
 
 ```bash
-curl -X POST http://localhost:8080/api/trainees \
+curl -X POST http://localhost:8081/api/trainees \
   -H "Content-Type: application/json" \
   -d '{
     "firstName": "John",
@@ -473,10 +596,37 @@ curl -X POST http://localhost:8080/api/trainees \
   }'
 ```
 
+Response:
+```json
+{
+  "username": "john.doe",
+  "password": "aBcD1234"
+}
+```
+
+### Login to Get JWT Token
+
+```bash
+curl -X POST http://localhost:8081/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "john.doe",
+    "password": "aBcD1234"
+  }'
+```
+
+Response:
+```json
+{
+  "token": "eyJhbGciOiJIUzUxMiJ9...",
+  "type": "Bearer"
+}
+```
+
 ### Create a Training Session
 
 ```bash
-curl -X POST http://localhost:8080/api/trainings \
+curl -X POST http://localhost:8081/api/trainings \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -489,11 +639,32 @@ curl -X POST http://localhost:8080/api/trainings \
   }'
 ```
 
+> **Note**: This request automatically triggers a workload update to workload-service via OpenFeign
+
 ### Check Trainer Workload
 
 ```bash
 curl -X GET http://localhost:8082/api/workload/jane.smith \
   -H "Authorization: Bearer <token>"
+```
+
+Response:
+```json
+{
+  "username": "jane.smith",
+  "firstName": "Jane",
+  "lastName": "Smith",
+  "isActive": true,
+  "years": {
+    "2026": {
+      "months": {
+        "2": {
+          "totalDuration": 60
+        }
+      }
+    }
+  }
+}
 ```
 
 ---
@@ -502,16 +673,55 @@ curl -X GET http://localhost:8082/api/workload/jane.smith \
 
 ### Actuator Endpoints
 
-**Gym-CRM-System**: `http://localhost:8080/actuator`
-- `/actuator/health` - Health check
-- `/actuator/metrics` - Application metrics
+**Gym-CRM-System**: `http://localhost:8081/actuator` (dev)
+- `/actuator/health` - Health check with full details
+- `/actuator/metrics` - Application metrics (read-only)
 - `/actuator/info` - Application info
+- `/actuator/prometheus` - Prometheus metrics export (read-only)
+
+Configuration:
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  metrics:
+    tags:
+      application: gym-crm-system
+```
 
 **Workload-Service**: `http://localhost:8082/actuator`
+- `/actuator/health` - Health check with full details
+- `/actuator/metrics` - Application metrics (read-only)
+- `/actuator/info` - Application info
+- `/actuator/prometheus` - Prometheus metrics export (read-only)
+
+Configuration:
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: workload-service
+```
 
 ### Eureka Dashboard
 
 Monitor all registered services at `http://localhost:8761`
+
+**Features**:
+- View all registered service instances
+- Check service health status
+- Monitor lease renewal intervals
+- View service metadata
 
 ---
 
